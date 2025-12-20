@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Risk Advisory Internal Control Evaluator</title>
+<style>
+body { font-family: Arial, sans-serif; background: #f4f4f9; margin: 0; padding: 0; }
+header { background: #4a90e2; color: white; padding: 1rem; text-align: center; }
+main { padding: 2rem; max-width: 1000px; margin: auto; }
+form, .file-upload, .dashboard, .recommendations { background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 2rem; }
+form div, .file-upload div { margin-bottom: 1rem; }
+label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
+input, select, textarea, button { width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc; }
+button { background: #4a90e2; color: white; border: none; cursor: pointer; }
+button:hover { background: #357ab8; }
+table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: center; }
+th { background: #eee; }
+.Strong { background-color: #c8e6c9; }
+.Moderate { background-color: #fff9c4; }
+.Weak { background-color: #ffcdd2; }
+.delete-btn { background: #e74c3c; padding: 0.2rem 0.5rem; border-radius: 4px; }
+canvas { max-width: 100%; margin-top: 1rem; }
+</style>
+</head>
+<body>
+<header>
+<h1>Risk Advisory Internal Control Evaluator</h1>
+</header>
+<main>
+
+<form id="controlForm">
+  <div><label>Control Name</label><input type="text" id="controlName" required></div>
+  <div><label>Control Description</label><textarea id="controlDesc" rows="2" required></textarea></div>
+  <div><label>Control Type</label><select id="controlType"><option>Preventive</option><option>Detective</option><option>Corrective</option></select></div>
+  <div><label>Frequency</label><select id="frequency"><option value="1">Daily</option><option value="0.8">Weekly</option><option value="0.6">Monthly</option><option value="0.4">Quarterly</option><option value="0.2">Annually</option></select></div>
+  <div><label>Risk Severity</label><select id="risk"><option value="1">High</option><option value="0.7">Medium</option><option value="0.4">Low</option></select></div>
+  <div><label>Evidence of Testing</label><select id="evidence"><option value="1">Yes</option><option value="0.5">No</option></select></div>
+  <div><label>Metrics (# of errors)</label><input type="number" id="metrics" min="0" value="0"></div>
+  <button type="submit">Add Control</button>
+</form>
+
+<div class="file-upload">
+  <div><label>Upload Excel File (.xlsx)</label><input type="file" id="excelFile" accept=".xlsx, .xls"></div>
+</div>
+
+<table id="controlsTable">
+<thead>
+<tr><th>Name</th><th>Description</th><th>Type</th><th>Frequency</th><th>Risk</th><th>Evidence</th><th>Metrics</th><th>Score</th><th>Rating</th><th>Actions</th></tr>
+</thead>
+<tbody></tbody>
+</table>
+
+<div class="dashboard">
+<h2>Dashboard</h2>
+<canvas id="ratingChart"></canvas>
+<canvas id="riskChart"></canvas>
+</div>
+
+<div class="recommendations">
+<h2>Recommendations</h2>
+<ul id="recommendationList"></ul>
+</div>
+
+<button id="exportBtn">Export CSV (Controls + Recommendations)</button>
+
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const form=document.getElementById('controlForm');
+const tableBody=document.querySelector('#controlsTable tbody');
+const excelInput=document.getElementById('excelFile');
+const recList=document.getElementById('recommendationList');
+
+let controls = [];
+
+function calculateScore(freq,risk,evidence,metrics){
+  let metricScore = metrics>0?1:0.5;
+  return Math.round(freq*40 + risk*40 + evidence*10 + metricScore*10);
+}
+
+function getRating(score){ if(score>=80) return 'Strong'; if(score>=50) return 'Moderate'; return 'Weak'; }
+
+function addControl(control){
+  controls.push(control);
+  renderTable();
+  updateDashboard();
+  updateRecommendations();
+}
+
+function renderTable(){
+  tableBody.innerHTML='';
+  controls.forEach((control,i)=>{
+    const row=document.createElement('tr');
+    row.innerHTML=`
+      <td>${control.name}</td>
+      <td>${control.desc}</td>
+      <td>${control.type}</td>
+      <td>${control.freqLabel}</td>
+      <td>${control.riskLabel}</td>
+      <td>${control.evidenceLabel}</td>
+      <td>${control.metrics}</td>
+      <td>${control.score}</td>
+      <td class="${control.rating}">${control.rating}</td>
+      <td><button class="delete-btn" data-index="${i}">Delete</button></td>
+    `;
+    tableBody.appendChild(row);
+  });
+  tableBody.querySelectorAll('.delete-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{controls.splice(btn.dataset.index,1); renderTable(); updateDashboard(); updateRecommendations();});
+  });
+}
+
+function updateDashboard(){
+  const ratingCounts = {Strong:0, Moderate:0, Weak:0};
+  const riskCounts = {High:0, Medium:0, Low:0};
+  controls.forEach(c=>{
+    ratingCounts[c.rating]++;
+    riskCounts[c.riskLabel]++;
+  });
+  const ratingCtx=document.getElementById('ratingChart').getContext('2d');
+  new Chart(ratingCtx,{type:'bar',data:{labels:['Strong','Moderate','Weak'],datasets:[{label:'Controls by Rating',data:[ratingCounts.Strong,ratingCounts.Moderate,ratingCounts.Weak],backgroundColor:['#c8e6c9','#fff9c4','#ffcdd2']}]},options:{responsive:true}});
+  
+  const riskCtx=document.getElementById('riskChart').getContext('2d');
+  new Chart(riskCtx,{type:'pie',data:{labels:['High','Medium','Low'],datasets:[{label:'Controls by Risk',data:[riskCounts.High,riskCounts.Medium,riskCounts.Low],backgroundColor:['#e74c3c','#f1c40f','#2ecc71']}]},options:{responsive:true}});
+}
+
+function updateRecommendations(){
+  recList.innerHTML='';
+  controls.forEach(c=>{
+    if(c.rating==='Weak' && c.riskLabel==='High') recList.innerHTML+=`<li>Control "${c.name}" is Weak & High Risk → Consider adding preventive measures or increasing testing frequency.</li>`;
+    else if(c.rating==='Weak') recList.innerHTML+=`<li>Control "${c.name}" is Weak → Review evidence or improve design.</li>`;
+    else if(c.rating==='Moderate' && c.riskLabel==='High') recList.innerHTML+=`<li>Control "${c.name}" is Moderate & High Risk → Increase monitoring or testing.</li>`;
+  });
+}
+
+form.addEventListener('submit',e=>{
+  e.preventDefault();
+  const name=document.getElementById('controlName').value;
+  const desc=document.getElementById('controlDesc').value;
+  const type=document.getElementById('controlType').value;
+  const freq=parseFloat(document.getElementById('frequency').value);
+  const risk=parseFloat(document.getElementById('risk').value);
+  const evidence=parseFloat(document.getElementById('evidence').value);
+  const metrics=parseInt(document.getElementById('metrics').value);
+  const score=calculateScore(freq,risk,evidence,metrics);
+  const rating=getRating(score);
+  const freqLabel=document.getElementById('frequency').selectedOptions[0].text;
+  const riskLabel=document.getElementById('risk').selectedOptions[0].text;
+  const evidenceLabel=document.getElementById('evidence').selectedOptions[0].text;
+  addControl({name,desc,type,freqLabel,riskLabel,evidenceLabel,metrics,score,rating});
+  form.reset();
+});
+
+excelInput.addEventListener('change',e=>{
+  const file=e.target.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=evt=>{
+    const data=new Uint8Array(evt.target.result);
+    const workbook=XLSX.read(data,{type:'array'});
+    const sheetName=workbook.SheetNames[0];
+    const worksheet=workbook.Sheets[sheetName];
+    const jsonData=XLSX.utils.sheet_to_json(worksheet);
+    jsonData.forEach(row=>{
+      const freqMap={"Daily":1,"Weekly":0.8,"Monthly":0.6,"Quarterly":0.4,"Annually":0.2};
+      const riskMap={"High":1,"Medium":0.7,"Low":0.4};
+      const evidenceMap={"Yes":1,"No":0.5};
+      const freq=freqMap[row.Frequency]||0.2;
+      const risk=riskMap[row.Risk]||0.4;
+      const evidence=evidenceMap[row.Evidence]||0.5;
+      const metrics=parseInt(row.Metrics)||0;
+      const score=calculateScore(freq,risk,evidence,metrics);
+      const rating=getRating(score);
+      addControl({
+        name:row["Control Name"]||"",
+        desc:row.Description||"",
+        type:row.Type||"",
+        freqLabel:row.Frequency||"",
+        riskLabel:row.Risk||"",
+        evidenceLabel:row.Evidence||"",
+        metrics:metrics,
+        score:score,
+        rating:rating
+      });
+    });
+  };
+  reader.readAsArrayBuffer(file);
+  e.target.value="";
+});
+
+document.getElementById('exportBtn').addEventListener('click',()=>{
+  let csv='Name,Description,Type,Frequency,Risk,Evidence,Metrics,Score,Rating,Recommendation\n';
+  controls.forEach(c=>{
+    let rec='';
+    if(c.rating==='Weak' && c.riskLabel==='High') rec='Consider adding preventive measures or increasing testing frequency.';
+    else if(c.rating==='Weak') rec='Review evidence or improve design.';
+    else if(c.rating==='Moderate' && c.riskLabel==='High') rec='Increase monitoring or testing.';
+    csv+=`"${c.name}","${c.desc}","${c.type}","${c.freqLabel}","${c.riskLabel}","${c.evidenceLabel}",${c.metrics},${c.score},"${c.rating}","${rec}"\n`;
+  });
+  const blob=new Blob([csv],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='controls_with_recommendations.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
